@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="pl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PanDa to pytanie...</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'panda-red': '#ff6b35',    // Kolor Pandy Małej
+                        'panda-green': '#10b981',  // Kolor Bambusa
+                        'panda-dark': '#111827',   // Ciemne tło
+                        'panda-surface': '#1f2937' // Karty
+                    },
+                    animation: {
+                        'bounce-slow': 'bounce 3s infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    
+    <!-- PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <!-- Ikony FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body { background-color: #111827; color: #f3f4f6; }
+        .panda-gradient { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+        .red-panda-gradient { background: linear-gradient(135deg, #ff6b35 0%, #ea580c 100%); }
+        
+        /* Custom range slider for betting */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: #ff6b35;
+            margin-top: -10px;
+            cursor: pointer;
+            border: 2px solid white;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: #4b5563;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="font-sans min-h-screen flex flex-col">
+
+    <div id="app" class="flex-grow flex flex-col max-w-3xl mx-auto w-full p-4 relative">
+        
+        <!-- HEADER -->
+        <header class="flex justify-between items-center mb-6 py-3 border-b border-gray-700 sticky top-0 bg-panda-dark/95 z-50 backdrop-blur-sm">
+            <div class="flex items-center gap-2">
+                <div class="text-3xl">🐼</div>
+                <div>
+                    <h1 class="text-xl font-bold leading-tight text-white">PanDa <span class="text-panda-red">to pytanie...</span></h1>
+                    <p class="text-[10px] text-gray-400 uppercase tracking-widest">Gra towarzyska</p>
+                </div>
+            </div>
+            <div v-if="myPlayer" class="flex items-center gap-2 bg-gray-800 px-4 py-1.5 rounded-full border border-gray-600 shadow-lg">
+                <span class="font-bold text-white">{{ myPlayer.name }}</span>
+                <div class="w-px h-4 bg-gray-600"></div>
+                <span class="text-yellow-400 font-bold flex items-center gap-1">
+                    {{ myPlayer.score }} <span class="text-xs">PandaCoin</span>
+                </span>
+            </div>
+        </header>
+
+        <!-- CONNECTION STATUS / ERROR -->
+        <div v-if="errorMessage" class="bg-red-900/80 text-white p-3 rounded-lg mb-4 text-center text-sm backdrop-blur-sm border border-red-500 animate-pulse">
+            <i class="fa-solid fa-triangle-exclamation mr-2"></i> {{ errorMessage }}
+            <button @click="errorMessage = ''" class="ml-4 underline text-xs">Zamknij</button>
+        </div>
+
+        <!-- VIEW: MENU -->
+        <div v-if="view === 'menu'" class="flex flex-col items-center justify-center flex-grow gap-6 animate-fade-in">
+            <div class="text-center space-y-2 mb-4">
+                <div class="flex justify-center gap-4 text-6xl mb-4 animate-bounce-slow">
+                    <span>🐼</span><span>🦊</span>
+                </div>
+                <h2 class="text-2xl font-bold text-white">Witaj w stadzie!</h2>
+                <p class="text-gray-400 text-sm">Zbierz ekipę, odpowiadaj szczerze i zgarniaj PandaCoiny.</p>
+            </div>
+
+            <div class="w-full max-w-xs space-y-4">
+                <div>
+                    <label class="block text-xs text-panda-green font-bold uppercase mb-1 ml-1">Twój Nick</label>
+                    <input v-model="nickname" type="text" maxlength="12" placeholder="Np. BambusowyZenek" 
+                        class="w-full bg-gray-800 border-2 border-gray-600 rounded-xl p-3 text-white focus:border-panda-green focus:outline-none transition text-center font-bold placeholder-gray-600">
+                </div>
+
+                <div v-if="urlGameId" class="p-3 bg-panda-green/20 border border-panda-green rounded-xl text-center text-sm text-green-200">
+                    Wykryto zaproszenie do gry!
+                </div>
+
+                <div class="grid gap-3 pt-2">
+                    <button @click="createGame" :disabled="!nickname"
+                        class="red-panda-gradient text-white font-bold py-3.5 rounded-xl shadow-lg shadow-orange-900/50 transition transform active:scale-95 disabled:opacity-50 disabled:grayscale">
+                        <i class="fa-solid fa-crown mr-2"></i> Stwórz Grę (Host)
+                    </button>
+                    <button @click="joinGame" :disabled="!nickname"
+                        class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 rounded-xl border border-gray-500 transition transform active:scale-95 disabled:opacity-50 disabled:grayscale">
+                        <i class="fa-solid fa-users mr-2"></i> Dołącz do Gry
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: LOBBY -->
+        <div v-if="view === 'lobby'" class="flex flex-col flex-grow">
+            <div class="bg-panda-surface p-6 rounded-2xl border border-gray-700 text-center mb-6 relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-panda-green to-panda-red"></div>
+                <h2 class="text-2xl font-bold mb-1">Lobby</h2>
+                <p class="text-gray-400 text-sm">Czekamy na resztę pand...</p>
+                
+                <div v-if="isHost" class="mt-6 bg-black/40 p-3 rounded-xl border border-dashed border-gray-600">
+                    <p class="text-[10px] text-gray-400 uppercase mb-2 font-bold">Wyślij link znajomym:</p>
+                    <div class="flex items-center gap-2">
+                        <input type="text" readonly :value="shareLink" class="w-full bg-transparent text-panda-green text-xs font-mono focus:outline-none text-ellipsis">
+                        <button @click="copyLink" class="text-white hover:text-panda-green p-2 rounded-lg transition">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 mb-auto">
+                <div v-for="p in players" :key="p.id" class="bg-gray-800 p-4 rounded-xl flex flex-col items-center border border-gray-700 relative">
+                    <i v-if="p.isHost" class="fa-solid fa-crown text-yellow-500 absolute top-2 right-2 text-xs"></i>
+                    <div class="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center text-2xl mb-2 shadow-inner">
+                        {{ getAvatar(p.name) }}
+                    </div>
+                    <span class="font-bold text-sm truncate w-full text-center">{{ p.name }}</span>
+                </div>
+            </div>
+
+            <div v-if="isHost" class="mt-4 pb-4">
+                <button @click="startGameLogic" :disabled="players.length < 2"
+                    class="w-full panda-gradient text-white text-lg font-bold py-4 rounded-2xl shadow-xl shadow-green-900/40 transition transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed">
+                    GRAJMY! 🎋
+                </button>
+                <p v-if="players.length < 2" class="text-center text-xs text-red-400 mt-3">Potrzeba min. 2 graczy.</p>
+            </div>
+            <div v-else class="mt-4 text-center pb-8 animate-pulse text-gray-400">
+                <i class="fa-solid fa-spinner fa-spin mr-2"></i> Host odpala grę...
+            </div>
+        </div>
+
+        <!-- VIEW: GAME -->
+        <div v-if="view === 'game' && currentQuestion" class="flex flex-col flex-grow">
+            
+            <!-- Info Bar -->
+            <div class="flex justify-between items-end mb-4 px-1">
+                <div class="text-xs font-bold text-gray-500 uppercase">Runda {{ gameState.round }}/{{ maxRounds }}</div>
+                <div class="text-right">
+                    <div class="text-[10px] text-gray-500 uppercase">Aktywna Panda</div>
+                    <div class="text-panda-red font-bold text-lg leading-none">{{ activePlayerName }}</div>
+                </div>
+            </div>
+
+            <!-- Question Card -->
+            <div class="bg-gray-800 p-6 rounded-3xl border-2 border-gray-700 shadow-2xl mb-6 relative">
+                <div class="absolute -top-3 -left-2 text-4xl transform -rotate-12">🤔</div>
+                <h3 class="text-lg md:text-xl font-bold text-center leading-relaxed pt-2">{{ currentQuestion.q }}</h3>
+            </div>
+
+            <!-- PHASE 1: ANSWERING -->
+            <div v-if="gameState.phase === 'answering'" class="flex-grow flex flex-col justify-center">
+                <div v-if="amIActive" class="space-y-3">
+                    <p class="text-center text-panda-red font-bold mb-2 text-sm uppercase tracking-wider">Wybierz szczerze!</p>
+                    <button v-for="(ans, idx) in currentQuestion.a" :key="idx" @click="submitActiveChoice(idx)"
+                        class="w-full p-4 bg-gray-800 hover:bg-gray-700 border-l-4 border-gray-600 hover:border-panda-red rounded-r-xl text-left transition-all group shadow-md">
+                        <span class="font-bold text-panda-red mr-2 group-hover:text-white">{{ ['A','B','C','D'][idx] }}.</span>
+                        <span class="text-gray-200 group-hover:text-white">{{ ans }}</span>
+                    </button>
+                </div>
+                <div v-else class="text-center space-y-6 py-10">
+                    <div class="relative inline-block">
+                        <div class="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center text-4xl animate-bounce">
+                            🦊
+                        </div>
+                        <div class="absolute -bottom-1 -right-1 bg-gray-900 rounded-full p-1">
+                            <i class="fa-solid fa-spinner fa-spin text-panda-red text-xl"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-lg font-bold text-white">{{ activePlayerName }}</p>
+                        <p class="text-gray-400 text-sm">myśli nad odpowiedzią...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PHASE 2: BETTING -->
+            <div v-if="gameState.phase === 'betting'" class="flex-grow flex flex-col">
+                <div v-if="!amIActive" class="flex flex-col h-full">
+                    <div v-if="!hasBet" class="flex-grow flex flex-col">
+                        <p class="text-center text-panda-green font-bold mb-4 text-sm uppercase">Jak odpowie {{ activePlayerName }}?</p>
+                        
+                        <div class="space-y-2 mb-6">
+                            <button v-for="(ans, idx) in currentQuestion.a" :key="idx" 
+                                @click="selectedBetAnswer = idx"
+                                :class="selectedBetAnswer === idx ? 'border-panda-green bg-panda-green/10 ring-1 ring-panda-green' : 'border-gray-700 bg-gray-800'"
+                                class="w-full p-3 border rounded-xl text-left transition flex items-center gap-3 text-sm">
+                                <div class="w-6 h-6 rounded flex items-center justify-center text-xs font-bold"
+                                     :class="selectedBetAnswer === idx ? 'bg-panda-green text-black' : 'bg-gray-700 text-gray-400'">
+                                    {{ ['A','B','C','D'][idx] }}
+                                </div>
+                                <span :class="selectedBetAnswer === idx ? 'text-white' : 'text-gray-300'">{{ ans }}</span>
+                            </button>
+                        </div>
+
+                        <div class="bg-gray-800 p-4 rounded-2xl border border-gray-700 mt-auto mb-4">
+                            <div class="flex justify-between mb-4">
+                                <span class="text-gray-400 text-xs uppercase font-bold mt-1">Stawka</span>
+                                <span class="text-panda-red font-bold text-xl flex items-center gap-1">
+                                    {{ betAmount }} <i class="fa-solid fa-coins text-xs"></i>
+                                </span>
+                            </div>
+                            <input type="range" v-model.number="betAmount" min="1" max="3" step="1" class="w-full mb-2">
+                            <div class="flex justify-between text-[10px] text-gray-500 uppercase font-bold">
+                                <span>Niepewny</span>
+                                <span>Pewniak</span>
+                            </div>
+                        </div>
+
+                        <button @click="submitBet" :disabled="selectedBetAnswer === null"
+                            class="w-full panda-gradient text-white font-bold py-4 rounded-xl shadow-lg shadow-green-900/30 transition transform active:scale-95 disabled:opacity-50 disabled:grayscale">
+                            Obstawiam!
+                        </button>
+                    </div>
+                    <div v-else class="flex flex-col items-center justify-center h-full text-center animate-fade-in">
+                        <i class="fa-solid fa-circle-check text-5xl text-panda-green mb-4"></i>
+                        <h3 class="text-xl font-bold text-white mb-2">Zakład przyjęty!</h3>
+                        <p class="text-gray-400 text-sm">Czekamy na resztę stada...</p>
+                    </div>
+                </div>
+                <div v-else class="flex flex-col items-center justify-center h-full text-center space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-full border-4 border-gray-700">
+                        <i class="fa-solid fa-user-secret text-4xl text-gray-400"></i>
+                    </div>
+                    <div>
+                        <p class="text-lg text-white font-bold">Twoja odpowiedź jest tajna.</p>
+                        <p class="text-gray-400 text-sm mt-1">Reszta graczy próbuje zgadnąć...</p>
+                    </div>
+                    <div class="bg-gray-800 px-4 py-2 rounded border border-gray-700 text-sm text-panda-red">
+                        Wybrałeś: <strong>{{ ['A','B','C','D'][gameState.activeChoice] }}</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PHASE 3: RESULTS -->
+            <div v-if="gameState.phase === 'result'" class="flex-grow flex flex-col animate-fade-in pb-4">
+                <div class="text-center mb-6">
+                    <p class="text-gray-500 text-[10px] uppercase font-bold mb-2">{{ activePlayerName }} wybrał:</p>
+                    <div class="bg-gradient-to-r from-gray-800 to-gray-700 p-4 rounded-xl border-l-4 border-panda-green shadow-lg text-left flex items-center gap-3">
+                        <div class="bg-panda-green text-black font-bold w-8 h-8 rounded flex items-center justify-center flex-shrink-0">
+                            {{ ['A','B','C','D'][gameState.activeChoice] }}
+                        </div>
+                        <span class="font-bold text-white text-sm md:text-base">{{ currentQuestion.a[gameState.activeChoice] }}</span>
+                    </div>
+                </div>
+
+                <div class="space-y-2 mb-6 overflow-y-auto max-h-64 pr-1">
+                    <div v-for="res in roundResults" :key="res.id" 
+                        class="flex items-center justify-between p-3 rounded-lg bg-gray-800 border border-gray-700"
+                        :class="{'border-green-500/40 bg-green-900/10': res.won && !res.isActive, 'opacity-75': !res.won && !res.isActive, 'border-blue-500/40 bg-blue-900/10': res.isActive}">
+                        
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">{{ getAvatar(res.name) }}</span>
+                            <div class="flex flex-col">
+                                <span class="font-bold text-sm leading-none">{{ res.name }}</span>
+                                <span v-if="!res.isActive" class="text-[10px] text-gray-400 mt-1">
+                                    Typ: <strong :class="res.won ? 'text-panda-green' : 'text-red-400'">{{ ['A','B','C','D'][res.betAnswer] }}</strong> ({{res.wager}} 🪙)
+                                </span>
+                                <span v-else class="text-[10px] text-blue-300 mt-1">Aktywny gracz</span>
+                            </div>
+                        </div>
+
+                        <div class="font-bold text-base" 
+                             :class="res.change > 0 ? 'text-panda-green' : (res.change < 0 ? 'text-red-400' : 'text-gray-400')">
+                            {{ res.change > 0 ? '+' : ''}}{{ res.change }}
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="isHost" class="mt-auto pt-2">
+                    <button @click="nextRound" class="w-full bg-white text-black hover:bg-gray-200 py-4 rounded-xl font-bold text-lg shadow-lg transition">
+                        Dalej <i class="fa-solid fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+                <div v-else class="mt-auto text-center text-gray-500 text-xs animate-pulse uppercase font-bold">
+                    Host klika dalej...
+                </div>
+            </div>
+
+        </div>
+
+        <!-- VIEW: GAMEOVER -->
+        <div v-if="view === 'gameover'" class="flex flex-col items-center justify-center flex-grow text-center animate-fade-in">
+            <div class="text-6xl mb-2">🏆</div>
+            <h2 class="text-3xl font-bold text-white mb-1">Koniec Gry!</h2>
+            <p class="text-gray-400 text-sm mb-8">Kto jest największym ekspertem od ludzi?</p>
+            
+            <div class="w-full bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden mb-6">
+                <div v-for="(p, idx) in sortedPlayers" :key="p.id" 
+                    class="flex items-center justify-between p-4 border-b border-gray-700 last:border-0 relative"
+                    :class="idx === 0 ? 'bg-yellow-500/10' : ''">
+                    <div class="flex items-center gap-3 relative z-10">
+                        <div class="font-mono font-bold text-gray-500 w-6 text-left" :class="{'text-yellow-400 text-xl': idx===0}">{{ idx + 1 }}.</div>
+                        <div class="text-2xl">{{ getAvatar(p.name) }}</div>
+                        <span class="font-bold" :class="{'text-yellow-400': idx===0}">{{ p.name }}</span>
+                    </div>
+                    <div class="font-bold text-panda-green relative z-10">
+                        {{ p.score }} <span class="text-xs text-gray-500">PC</span>
+                    </div>
+                    <!-- Crown for winner -->
+                    <i v-if="idx===0" class="fa-solid fa-crown text-yellow-500/20 text-6xl absolute right-10 top-1/2 transform -translate-y-1/2 rotate-12"></i>
+                </div>
+            </div>
+
+            <button @click="restartGame" v-if="isHost" class="text-gray-400 hover:text-white underline text-sm">
+                Zagraj jeszcze raz (zresetuj punkty)
+            </button>
+        </div>
+
+    </div>
+
+    <!-- LOGIC -->
+    <script>
+        const RAW_QUESTIONS = [
+          { "q": "Co jest dla mnie najważniejsze na pierwszej randce?", "a": ["Dobra rozmowa", "Wyczuwalna chemia", "Dobre maniery", "Atrakcyjny wygląd"] },
+          { "q": "Jak najczęściej okazuję, że ktoś mi się podoba?", "a": ["Utrzymuję kontakt wzrokowy", "Dużo żartuję i się śmieję", "Zadaję mnóstwo pytań", "Czekam, aż ta osoba zrobi krok"] },
+          { "q": "Jaki gest romantyczny najbardziej mnie roztkliwia?", "a": ["Kwiaty bez okazji", "Własnoręcznie napisany list", "Śniadanie do łóżka", "Niespodziewany wyjazd"] },
+          { "q": "Kto powinien zapłacić za kolację na randce?", "a": ["Mężczyzna", "Dzielimy się po połowie", "Ten, kto zapraszał", "Każdy płaci za siebie"] },
+          { "q": "Co myślę o publicznym okazywaniu uczuć (trzymanie za rękę, przytulanie)?", "a": ["Uwielbiam, to urocze", "Tylko dyskretnie", "Nie lubię tego", "Zależy od towarzystwa"] },
+          { "q": "Jaka cecha charakteru u partnera/partnerki najbardziej mi imponuje?", "a": ["Inteligencja", "Opiekuńczość", "Zaradność życiowa", "Poczucie humoru"] },
+          { "q": "Mój idealny pomysł na spędzenie rocznicy to:", "a": ["Romantyczna kolacja w domu", "Wyjście do opery/teatru", "Wyjazd za miasto", "Wspólna aktywność sportowa"] },
+          { "q": "Czy wierzę w miłość od pierwszego wejrzenia?", "a": ["Tak, absolutnie", "Wierzę w zauroczenie", "Nie, miłość wymaga czasu", "To tylko wymysł filmowców"] },
+          { "q": "Jak reaguję na komplementy?", "a": ["Rumienię się", "Obracam w żart", "Dziękuję z uśmiechem", "Zaprzeczam skromnie"] },
+          { "q": "Co najbardziej cenię w długotrwałym związku?", "a": ["Zaufanie", "Namiętność", "Przyjaźń", "Wspólne cele"] },
+          { "q": "Jakie jest moje podejście do zazdrości?", "a": ["Jestem bardzo zazdrosny/a", "Odrobina dodaje pikanterii", "Ufam w 100%", "Ukrywam zazdrość"] },
+          { "q": "Gdybym miał/a wybrać film do obejrzenia przytulonym na kanapie, byłby to:", "a": ["Komedia romantyczna", "Stary klasyk kinowy", "Film przygodowy", "Dramat kostiumowy"] },
+          { "q": "Co jest dla mnie 'deal-breakerem' (skreśla osobę) na początku znajomości?", "a": ["Brak kultury osobistej", "Palenie papierosów", "Ciągłe mówienie o sobie", "Brak ambicji"] },
+          { "q": "Jak ważny jest dla mnie wygląd partnera?", "a": ["Najważniejszy", "Ważny, ale nie kluczowy", "Liczy się tylko wnętrze", "Musi być zadbany/a"] },
+          { "q": "Czy lubię niespodzianki?", "a": ["Kocham!", "Tylko te przemyślane", "Wolę mieć kontrolę", "Stresują mnie"] },
+          { "q": "Jaki styl ubierania u płci przeciwnej najbardziej mi się podoba?", "a": ["Elegancki/Klasyczny", "Sportowy/Luzacki", "Artystyczny/Oryginalny", "Casual/Codzienny"] },
+          { "q": "Jakie jest moje zdanie na temat ślubu?", "a": ["Marzę o wielkim weselu", "Kameralna uroczystość", "Tylko cywilny", "Papier nie jest potrzebny"] },
+          { "q": "Gdy mam gorszy dzień, czego potrzebuję od drugiej połówki?", "a": ["Wysłuchania", "Przytulenia", "Rozśmieszenia", "Zostawienia w spokoju"] },
+          { "q": "Czy potrafię przyznać się do błędu w relacji?", "a": ["Tak, od razu", "Po dłuższym czasie", "Przychodzi mi to z trudem", "Rzadko się mylę"] },
+          { "q": "Co myślę o przyjaźni damsko-męskiej?", "a": ["Istnieje i jest super", "Możliwa, ale rzadka", "Nie wierzę w nią", "Tylko jeśli to dawni znajomi"] },
+          { "q": "Mój stosunek do tańca to:", "a": ["Uwielbiam i umiem", "Lubię, ale nie umiem", "Tylko po drinku", "Unikam parkietu"] },
+          { "q": "Gdybym mógł/mogła wyjechać gdziekolwiek teraz, wybrałbym/abym:", "a": ["Paryż", "Domek w Bieszczadach", "Nowy Jork", "Tropikalną wyspę"] },
+          { "q": "Jaką rolę w moim życiu odgrywa rodzina?", "a": ["Jest najważniejsza", "Ważna, ale z dystansem", "Spotykamy się tylko w święta", "Wolę przyjaciół"] },
+          { "q": "Czy lubię gotować dla kogoś?", "a": ["Tak, to moja miłość", "Tylko proste dania", "Wolę, jak ktoś gotuje dla mnie", "Traktuję to jako obowiązek"] },
+          { "q": "Co robię w wolną sobotę rano?", "a": ["Śpię do południa", "Idę biegać/na spacer", "Sprzątam mieszkanie", "Jem powolne śniadanie"] },
+          { "q": "Jak podchodzę do porządku w domu?", "a": ["Jestem pedantem", "Lubię porządek, bez przesady", "Artystyczny nieład", "Sprzątam, gdy muszę"] },
+          { "q": "Gdybym wygrał/a w Lotto, co zrobiłbym/abym z pracą?", "a": ["Rzucam natychmiast", "Przechodzę na pół etatu", "Pracuję dalej, bo lubię", "Zakładam własną firmę"] },
+          { "q": "Jaki jest mój typ osobowości?", "a": ["Dusza towarzystwa", "Spokojny obserwator", "Wieczny optymista", "Realista stąpający po ziemi"] },
+          { "q": "Co sądzę o posiadaniu zwierząt?", "a": ["Dom bez psa/kota to nie dom", "Lubię, ale u kogoś", "Tylko rybki", "Wolę sterylny porządek"] },
+          { "q": "Jakim kierowcą jestem?", "a": ["Szybkim i wściekłym", "Ostrożnym i przepisowym", "Niedzielnym", "Wolę być pasażerem"] },
+          { "q": "Moja ulubiona pora roku to:", "a": ["Wiosna (wszystko kwitnie)", "Lato (ciepło i wakacje)", "Jesień (klimat i kolory)", "Zima (święta i śnieg)"] },
+          { "q": "Czy jestem osobą punktualną?", "a": ["Zawsze przed czasem", "Punktualnie co do minuty", "Zdarzają mi się poślizgi", "Notorycznie się spóźniam"] },
+          { "q": "Jak radzę sobie ze stresem?", "a": ["Aktywność fizyczna", "Rozmowa z bliskimi", "Zajadam słodycze", "Słucham muzyki/czytam"] },
+          { "q": "Co jest dla mnie wyznacznikiem sukcesu?", "a": ["Szczęśliwa rodzina", "Kariera i pieniądze", "Wewnętrzny spokój", "Podróże i przygody"] },
+          { "q": "Jaki rodzaj kuchni lubię najbardziej?", "a": ["Tradycyjną polską", "Włoską (pasta/pizza)", "Azjatycką/Ostrą", "Lekkie sałatki"] },
+          { "q": "Czy lubię czytać książki?", "a": ["Połykam tomy", "Czasem, na wakacjach", "Wolę audiobooki", "Wolę filmy"] },
+          { "q": "Moje podejście do nowych technologii:", "a": ["Muszę mieć najnowsze gadżety", "Używam tego, co konieczne", "Tęsknię za czasami offline", "Mam do nich dystans"] },
+          { "q": "Czy jestem osobą oszczędną?", "a": ["Tak, planuję budżet", "Staram się, ale nie wychodzi", "Żyje się raz", "Inwestuję każdą nadwyżkę"] },
+          { "q": "Jakie święta lubię najbardziej?", "a": ["Boże Narodzenie", "Wielkanoc", "Swoje urodziny", "Sylwestra"] },
+          { "q": "Czy łatwo nawiązuję nowe znajomości?", "a": ["Tak, zagadam do każdego", "Potrzebuję chwili na rozkręcenie", "Czekam, aż ktoś zagada", "Wolę sprawdzone grono"] },
+          { "q": "Co najbardziej mnie denerwuje w ludziach?", "a": ["Hipokryzja", "Głupota", "Brak higieny", "Arogancja"] },
+          { "q": "Czy wierzę w przeznaczenie?", "a": ["Tak, wszystko jest zapisane", "Wierzę w przypadki", "Kujemy własny los", "Trochę tak, trochę nie"] },
+          { "q": "Jaki jest mój stosunek do tradycji?", "a": ["Bardzo ją szanuję", "Lubię wybrane elementy", "Tworzę własne tradycje", "To przeżytek"] },
+          { "q": "Gdybym mógł/mogła mieć jeden talent, byłoby to:", "a": ["Śpiewanie", "Malowanie", "Języki obce", "Gra na instrumencie"] },
+          { "q": "Co robię, gdy znajdę pająka w domu?", "a": ["Zabijam kapciem", "Wynoszę na zewnątrz", "Krzyczę i wzywam pomocy", "Ignoruję go"] },
+          { "q": "Czy jestem sową czy skowronkiem?", "a": ["Wstaję o świcie z energią", "Najlepiej funkcjonuję w nocy", "Lubię spać do południa", "Dostosowuję się do sytuacji"] },
+          { "q": "Jaki prezent wolałbym/abym dostać?", "a": ["Praktyczny (np. sprzęt)", "Sentymentalny (np. album)", "Luksusowy (np. zegarek)", "Zabawny gadżet"] },
+          { "q": "Co myślę o mediach społecznościowych?", "a": ["Marnują czas", "Są świetne do kontaktu", "Używam tylko do pracy", "Lubię podglądać innych"] },
+          { "q": "Czy potrafię dochować tajemnicy?", "a": ["Grób to przy mnie gaduła", "Zazwyczaj tak", "Mówię tylko jednej osobie", "Jest to dla mnie trudne"] },
+          { "q": "Jaki jest mój wymarzony dom?", "a": ["Dworek na wsi", "Apartament w centrum", "Nowoczesna willa", "Mały domek z ogródkiem"] },
+          { "q": "Co sądzę o tatuażach?", "a": ["Podobają mi się", "Mam lub chcę mieć", "Nie w moim stylu", "Całkowicie nie akceptuję"] },
+          { "q": "Czy lubię gry planszowe?", "a": ["Uwielbiam rywalizację", "Gram dla towarzystwa", "Nudzą mnie", "Wolę karty"] },
+          { "q": "Jak reaguję na płacz innej osoby?", "a": ["Czuję się niezręcznie", "Od razu pocieszam", "Sam/a zaczynam płakać", "Analizuję przyczynę"] },
+          { "q": "Czy jestem osobą pamiętliwą?", "a": ["Pamiętam każdą krzywdę", "Wybaczam, ale pamiętam", "Szybko zapominam", "Nie chowam urazy"] },
+          { "q": "Jaki sport najchętniej uprawiam/oglądam?", "a": ["Piłka nożna", "Tenis/Squash", "Bieganie/Siłownia", "Szachy/E-sport"] },
+          { "q": "Czy lubię chodzić do muzeów?", "a": ["Tak, to fascynujące", "Tylko za granicą", "Szybko się nudzę", "Wolę galerię handlową"] },
+          { "q": "Co jest moim guilty pleasure (grzeszną przyjemnością)?", "a": ["Słodycze nocą", "Tanie reality show", "Zakupy online", "Plotkowanie"] },
+          { "q": "Czy ufam swojej intuicji?", "a": ["Zawsze mnie prowadzi", "Czasami słucham", "Wolę logikę", "Często mnie myli"] },
+          { "q": "Jakie jest moje podejście do zdrowego odżywiania?", "a": ["Restrykcyjna dieta", "Staram się jeść zdrowo", "Jem to, na co mam ochotę", "Zaczynam od poniedziałku"] },
+          { "q": "Czy lubię majsterkować/naprawiać rzeczy?", "a": ["Złota rączka", "Potrafię proste rzeczy", "Od razu dzwonię po fachowca", "Psuję jeszcze bardziej"] },
+          { "q": "Gdybym mógł/mogła zjeść kolację ze znaną osobą, byłby to:", "a": ["Papież/Duchowny", "Ulubiony aktor/aktorka", "Wielki naukowiec", "Gwiazda muzyki"] },
+          { "q": "Jaka muzyka najlepiej mnie opisuje?", "a": ["Rock/Klasyka rocka", "Pop i hity radiowe", "Muzyka klasyczna/Jazz", "Disco/Dance"] },
+          { "q": "Czy jestem osobą sentymentalną?", "a": ["Zbieram bilety i pamiątki", "Lubię powspominać", "Żyję tylko przyszłością", "Wyrzucam stare rzeczy"] },
+          { "q": "Co robię, gdy kelner pomyli zamówienie?", "a": ["Grzecznie proszę o wymianę", "Zjadam, nie chcę robić kłopotu", "Denerwuję się", "Żartuję z sytuacji"] },
+          { "q": "Jaki jest mój stosunek do polityki?", "a": ["Śledzę i dyskutuję", "Mam poglądy, ale nie mówię", "Nie interesuje mnie to", "To tylko kłótnie"] },
+          { "q": "Czy boję się starości?", "a": ["Tak, przeraża mnie", "Akceptuję kolej rzeczy", "Byle być zdrowym", "Czekam na mądrość wieku"] },
+          { "q": "Gdybym mógł/mogła cofnąć czas, co bym zmienił/a?", "a": ["Kierunek studiów/Pracę", "Jedną relację", "Inwestycje finansowe", "Nic, wszystko ma cel"] },
+          { "q": "Czy lubię występować publicznie?", "a": ["Czuję się jak ryba w wodzie", "Stresuję się, ale daję radę", "Unikam jak ognia", "Tylko w małym gronie"] },
+          { "q": "Co sądzę o horoskopach?", "a": ["Sprawdzam codziennie", "Czytam dla zabawy", "To bzdury", "Czasem coś się sprawdza"] },
+          { "q": "Jaki jest mój idealny urlop?", "a": ["Leżenie plackiem na plaży", "Intensywne zwiedzanie", "Trekking w górach", "Zaszycie się w głuszy"] },
+          { "q": "Czy potrafię śmiać się z siebie?", "a": ["Tak, mam duży dystans", "Zależy z czego", "Raczej biorę wszystko serio", "Nie lubię być obiektem żartów"] },
+          { "q": "Czy jestem osobą religijną/duchową?", "a": ["Tak, to dla mnie ważne", "Tradycyjnie", "Mam własną filozofię", "Jestem sceptykiem"] },
+          { "q": "Czego nie lubię w jedzeniu?", "a": ["Owoców morza", "Podrobów", "Zbyt ostrych rzeczy", "Jestem wszystkożerny/a"] },
+          { "q": "Jaki kolor dominuje w mojej szafie?", "a": ["Czarny/Szary", "Kolorowy/Wzorzysty", "Biel/Beż", "Niebieski/Granatowy"] },
+          { "q": "Czy lubię duże imprezy i wesela?", "a": ["Bawię się do białego rana", "Lubię, ale krótko", "Wolę kameralne spotkania", "Chodzę z obowiązku"] },
+          { "q": "Co robię, gdy widzę kogoś potrzebującego na ulicy?", "a": ["Daję pieniądze", "Kupuję jedzenie", "Modlę się/Myślę ciepło", "Omijam wzrokiem"] },
+          { "q": "Czy jestem uparty/a?", "a": ["Jak osioł", "Tylko w ważnych sprawach", "Łatwo ulegam argumentom", "Szukam kompromisu"] },
+          { "q": "Co sądzę o paleniu papierosów?", "a": ["Palę i lubię", "Palę okazjonalnie", "Nie przeszkadza mi u innych", "Nie toleruję dymu"] },
+          { "q": "Czy łatwo wydaję pieniądze na przyjemności?", "a": ["Tak, należy mi się", "Mam wyrzuty sumienia", "Rzadko to robię", "Tylko na promocjach"] },
+          { "q": "Jakim byłem uczniem w szkole?", "a": ["Wzorowym kujonem", "Przeciętnym, ale sprytnym", "Rozrabiaką", "Artystyczną duszą"] },
+          { "q": "Czy lubię biwakowanie pod namiotem?", "a": ["Kocham naturę", "Jedną noc wytrzymam", "Wolę hotel z łazienką", "Nigdy w życiu"] },
+          { "q": "Czy jestem gadułą?", "a": ["Usta mi się nie zamykają", "Zależy od tematu", "Wolę słuchać", "Jestem małomówny/a"] },
+          { "q": "Co jest dla mnie najważniejsze w pracy?", "a": ["Pieniądze", "Atmosfera", "Pasja/Rozwój", "Stabilizacja"] },
+          { "q": "Czy obgaduję znajomych?", "a": ["Zdarza się każdemu", "Nigdy, to nieeleganckie", "Tylko nieszkodliwie", "Wymieniam informacje"] },
+          { "q": "Jaka jest moja największa wada?", "a": ["Lenistwo", "Nieśmiałość", "Bałaganiarstwo", "Impulsywność"] },
+          { "q": "Czy lubię spędzać czas sam/a ze sobą?", "a": ["Tak, ładuję baterie", "Chwilę tak, ale krótko", "Nie, muszę mieć ludzi", "Zawsze coś sobie znajdę"] },
+          { "q": "Gdybym mógł/mogła mieszkać w innej epoce, byłoby to:", "a": ["Lata 20. XX wieku", "Średniowiecze", "Wiktoriańska Anglia", "Starożytność"] },
+          { "q": "Czy mam 'rękę do kwiatów'?", "a": ["Robię dżunglę w domu", "Kaktusy przeżyją", "Wszystko usycha", "Wolę sztuczne"] },
+          { "q": "Jaki jest mój stosunek do ryzyka?", "a": ["Lubię adrenalinę", "Kalkuluję zyski i straty", "Jestem asekurantem", "Unikam jak ognia"] },
+          { "q": "Czy jestem typem lidera?", "a": ["Naturalnie przejmuję dowodzenie", "Wolę współpracować", "Wolę wykonywać polecenia", "Jestem samotnym wilkiem"] },
+          { "q": "Co sądzę o zapuszczaniu brody (u mężczyzn)?", "a": ["Bardzo męskie", "Lekki zarost jest ok", "Wolę gładką twarz", "Obojętne mi to"] },
+          { "q": "Czy często korzystam z telefonu w towarzystwie?", "a": ["Tak, to nawyk", "Staram się nie", "Nigdy, to brak szacunku", "Tylko jak czekam na ważną info"] },
+          { "q": "Czy lubię kawę?", "a": ["Nie żyję bez niej", "Piję dla smaku", "Wolę herbatę", "Tylko z dużą ilością mleka"] },
+          { "q": "Co myślę o operacjach plastycznych?", "a": ["Wszystko jest dla ludzi", "Drobne poprawki są ok", "Należy starzeć się z godnością", "To próżność"] },
+          { "q": "Czy lubię chodzić na zakupy odzieżowe?", "a": ["To mój relaks", "Idę, gdy muszę", "Wolę online", "Nienawidzę przymierzalni"] },
+          { "q": "Jakie jest moje wymarzone auto?", "a": ["Szybkie sportowe", "Wielki SUV", "Klasyczny zabytkowy", "Małe i miejskie"] },
+          { "q": "Czy jestem osobą cierpliwą?", "a": ["Mam anielską cierpliwość", "Zazwyczaj tak", "Szybko wybucham", "Nie znoszę czekania"] },
+          { "q": "Co najbardziej uspokaja mnie po ciężkim dniu?", "a": ["Gorąca kąpiel", "Dobre jedzenie", "Sen", "Spacer"] },
+          { "q": "Czy zwracam uwagę na marki produktów?", "a": ["Tak, jakość kosztuje", "Tylko w elektronice/autach", "Nie, płaci się za logo", "Szukam okazji"] },
+          { "q": "Czy jestem szczęśliwym człowiekiem?", "a": ["Bardzo szczęśliwym", "Brakuje mi kilku rzeczy", "Pracuję nad tym", "Mam trudny okres"] },
+          { "q": "Kiedy jest odpowiedni czas na pierwszy pocałunek?", "a": ["Już na pierwszej randce", "Na drugiej lub trzeciej", "Dopiero po dłuższym poznaniu", "Czekam na inicjatywę drugiej strony"] },
+          { "q": "Co działa na mnie najbardziej przyciągająco?", "a": ["Głębokie spojrzenie w oczy", "Przypadkowy dotyk dłoni", "Przyjemny głos/Szept", "Zapach perfum"] },
+          { "q": "W czym najchętniej śpię?", "a": ["W klasycznej piżamie", "W luźnym T-shircie", "W bieliźnie", "W stroju Ewy/Adama"] },
+          { "q": "Jaki rodzaj czułości lubię najbardziej?", "a": ["Trzymanie za rękę", "Gładzenie po plecach/włosach", "Przytulanie na 'misia'", "Pocałunki w szyję"] },
+          { "q": "Co sądzę o śniadaniu podanym do łóżka?", "a": ["Szczyt romantyzmu", "Miłe, ale wolę przy stole", "Niewygodne (okruchy!)", "Wystarczy mi kawa"] },
+          { "q": "Jakie światło buduje najlepszy nastrój wieczorem?", "a": ["Blask świec", "Przygaszona lampka nocna", "Całkowita ciemność", "Blask kominka/TV"] },
+          { "q": "Czy kobieta powinna przejmować inicjatywę we flircie?", "a": ["Tak, to bardzo pociągające", "Nie, to rola mężczyzny", "Tylko subtelnie dając znaki", "Zależy od sytuacji"] },
+          { "q": "Jaki zapach u partnera/partnerki lubię najbardziej?", "a": ["Świeży/Cytrusowy", "Ciężki/Piżmowy/Drzewny", "Słodki/Kwiatowy", "Naturalny zapach skóry"] },
+          { "q": "Co myślę o masażu wykonanym przez partnera?", "a": ["Uwielbiam i się rozpływam", "Wolę sam/a masować", "Krępuje mnie to", "Tylko bolących pleców"] },
+          { "q": "Jak reaguję na szept do ucha?", "a": ["Przechodzą mnie ciarki", "To mnie łaskocze/śmieszy", "Uważam to za bardzo intymne", "Nie słyszę, proszę głośniej"] },
+          { "q": "Taniec przytualniec (wolny) to dla mnie:", "a": ["Świetna okazja do bliskości", "Tylko na weselach", "Stresująca sytuacja", "Romantyczny moment"] },
+          { "q": "W jakim stroju partner/ka podoba mi się najbardziej?", "a": ["W eleganckim/wieczorowym", "W czymś opinającym ciało", "W domowym dresie", "W mojej koszuli/bluzie"] },
+          { "q": "Pocałunek w miejscu publicznym (np. w parku) jest:", "a": ["Niedopuszczalny, to niekulturalne", "Dopuszczalny, ale dyskretny", "Lubię pokazać, że jesteśmy razem", "Nie zwracam uwagi na innych"] },
+          { "q": "Co jest najbardziej zmysłową częścią ciała (poza oczywistymi)?", "a": ["Dłonie", "Szyja/Kark", "Plecy", "Usta"] },
+          { "q": "Jakie filmy oglądane we dwoje budują najlepsze napięcie?", "a": ["Romanse z happy endem", "Horrory (żeby się przytulić)", "Filmy z nutką erotyzmu", "Komedie, żeby się rozluźnić"] },
+          { "q": "Długie patrzenie sobie głęboko w oczy...", "a": ["Prowokuje mnie do śmiechu", "Onieśmiela mnie", "To najlepsza gra wstępna", "Pozwala zajrzeć w duszę"] },
+          { "q": "Idealne zakończenie udanej randki to:", "a": ["Namiętny pocałunek", "Dżentelmeńskie odprowadzenie pod drzwi", "Zaproszenie na 'kawę'", "Długa rozmowa w samochodzie"] },
+          { "q": "Czy wygląd ma znaczenie w sypialni (np. bielizna, pościel)?", "a": ["Tak, jestem wzrokowcem", "Liczą się tylko uczucia", "Lubię, gdy jest elegancko", "Ważniejszy jest zapach i dotyk"] },
+          { "q": "Kiedy mówię 'kocham' po raz pierwszy?", "a": ["Gdy tylko to poczuję", "Czekam, aż druga osoba to powie", "Po długim czasie, by mieć pewność", "Kiedy emocje biorą górę"] },
+          { "q": "Co sądzę o karmieniu się nawzajem (np. truskawką)?", "a": ["Bardzo zmysłowe", "Zabawne i urocze", "Trochę dziecinne", "Nie lubię tego"] }
+        ];
+
+        const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
+
+        createApp({
+            setup() {
+                // --- STATE ---
+                const view = ref('menu'); 
+                const nickname = ref('');
+                const urlGameId = ref('');
+                const errorMessage = ref('');
+                const shareLink = ref('');
+                
+                const peer = ref(null);
+                const conn = ref(null);
+                const connections = ref([]);
+                const isHost = ref(false);
+                const myId = ref('');
+                
+                // Shared Game State
+                const gameState = reactive({
+                    players: [], // { id, name, score, isHost }
+                    round: 0,
+                    phase: 'lobby', 
+                    activePlayerId: null,
+                    questionIndex: 0,
+                    activeChoice: null, 
+                    bets: {},
+                    usedQuestions: [] // To avoid repetition
+                });
+
+                const selectedBetAnswer = ref(null);
+                const betAmount = ref(1);
+                const hasBet = ref(false);
+                const maxRounds = 15; 
+
+                // --- COMPUTED ---
+                const myPlayer = computed(() => gameState.players.find(p => p.id === myId.value));
+                const activePlayer = computed(() => gameState.players.find(p => p.id === gameState.activePlayerId));
+                const activePlayerName = computed(() => activePlayer.value ? activePlayer.value.name : 'Panda');
+                const amIActive = computed(() => gameState.activePlayerId === myId.value);
+                const currentQuestion = computed(() => RAW_QUESTIONS[gameState.questionIndex]);
+                const players = computed(() => gameState.players);
+                
+                const roundResults = computed(() => {
+                    if (gameState.phase !== 'result') return [];
+                    return gameState.players.map(p => {
+                        const isAct = p.id === gameState.activePlayerId;
+                        const bet = gameState.bets[p.id];
+                        let change = 0;
+                        let won = false;
+
+                        if (isAct) {
+                            const correctGuesses = Object.values(gameState.bets).filter(b => b.answer === gameState.activeChoice).length;
+                            change = correctGuesses * 2; 
+                        } else if (bet) {
+                            if (bet.answer === gameState.activeChoice) {
+                                change = bet.wager * 2; 
+                                won = true;
+                            } else {
+                                change = -bet.wager;
+                                won = false;
+                            }
+                        }
+                        return { 
+                            id: p.id, 
+                            name: p.name, 
+                            isActive: isAct, 
+                            change: change, 
+                            won: won, 
+                            wager: bet ? bet.wager : 0,
+                            betAnswer: bet ? bet.answer : null
+                        };
+                    });
+                });
+
+                const sortedPlayers = computed(() => {
+                    return [...gameState.players].sort((a, b) => b.score - a.score);
+                });
+
+                // --- HELPER: AVATAR ---
+                const getAvatar = (name) => {
+                    const avatars = ['🐼', '🦊', '🐨', '🐻', '🐯', '🦁', '🐵', '🐸'];
+                    if(!name) return '🐼';
+                    let hash = 0;
+                    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+                    return avatars[Math.abs(hash) % avatars.length];
+                }
+
+                // --- LIFECYCLE ---
+                onMounted(() => {
+                    const params = new URLSearchParams(window.location.search);
+                    if (params.get('gameId')) urlGameId.value = params.get('gameId');
+                });
+
+                // --- PEERJS ---
+                const initPeer = () => {
+                    return new Promise((resolve) => {
+                        const p = new Peer(null, { debug: 1 });
+                        p.on('open', (id) => {
+                            myId.value = id;
+                            resolve(id);
+                        });
+                        p.on('error', (err) => {
+                            errorMessage.value = "Błąd sieci: " + err.type;
+                        });
+                        peer.value = p;
+                    });
+                };
+
+                const createGame = async () => {
+                    isHost.value = true;
+                    await initPeer();
+                    gameState.players.push({ id: myId.value, name: nickname.value, score: 20, isHost: true });
+                    shareLink.value = `${window.location.origin}${window.location.pathname}?gameId=${myId.value}`;
+                    
+                    peer.value.on('connection', (c) => {
+                        connections.value.push(c);
+                        c.on('data', (data) => handleDataFromClient(c, data));
+                        c.on('open', () => c.send({ type: 'STATE_UPDATE', payload: gameState })); // Send state immediately
+                    });
+                    view.value = 'lobby';
+                };
+
+                const joinGame = async () => {
+                    isHost.value = false;
+                    const hostId = urlGameId.value || prompt("Podaj ID gry:");
+                    if (!hostId) return;
+                    await initPeer();
+                    conn.value = peer.value.connect(hostId);
+                    conn.value.on('open', () => {
+                        conn.value.send({ type: 'JOIN', payload: { name: nickname.value } });
+                    });
+                    conn.value.on('data', (data) => {
+                        if (data.type === 'STATE_UPDATE') {
+                            Object.assign(gameState, data.payload);
+                            if (gameState.phase === 'lobby') view.value = 'lobby';
+                            else if (gameState.phase === 'gameover') view.value = 'gameover';
+                            else view.value = 'game';
+                        }
+                    });
+                    conn.value.on('close', () => errorMessage.value = "Rozłączono z hostem.");
+                };
+
+                // --- HOST LOGIC ---
+                const broadcastState = () => {
+                    const data = { type: 'STATE_UPDATE', payload: gameState };
+                    connections.value.forEach(c => c.send(data));
+                };
+
+                const handleDataFromClient = (conn, data) => {
+                    if (!isHost.value) return;
+                    if (data.type === 'JOIN') {
+                        if (!gameState.players.find(p => p.id === conn.peer)) {
+                            gameState.players.push({ id: conn.peer, name: data.payload.name, score: 20, isHost: false });
+                            broadcastState();
+                        }
+                    } else if (data.type === 'ACTION') {
+                        processGameAction(data.payload);
+                    }
+                };
+
+                const processGameAction = (action) => {
+                    if (action.type === 'SUBMIT_ACTIVE_CHOICE') {
+                        if (gameState.phase !== 'answering') return;
+                        gameState.activeChoice = action.value;
+                        gameState.phase = 'betting';
+                        broadcastState();
+                    }
+                    else if (action.type === 'SUBMIT_BET') {
+                        gameState.bets[action.playerId] = { answer: action.value.answer, wager: action.value.wager };
+                        // Check if all bets are in
+                        const bettersCount = gameState.players.length - 1;
+                        if (Object.keys(gameState.bets).length >= bettersCount) {
+                            calculateScores();
+                        } else {
+                            broadcastState();
+                        }
+                    }
+                };
+
+                // --- GAME CONTROL ---
+                const startGameLogic = () => {
+                    gameState.round = 1;
+                    gameState.usedQuestions = [];
+                    pickRandomQuestion();
+                    gameState.activePlayerId = gameState.players[0].id;
+                    startRound();
+                };
+
+                const pickRandomQuestion = () => {
+                    let available = RAW_QUESTIONS.map((_, idx) => idx).filter(idx => !gameState.usedQuestions.includes(idx));
+                    if (available.length === 0) {
+                        gameState.usedQuestions = []; // Reset if all used
+                        available = RAW_QUESTIONS.map((_, idx) => idx);
+                    }
+                    const rand = available[Math.floor(Math.random() * available.length)];
+                    gameState.questionIndex = rand;
+                    gameState.usedQuestions.push(rand);
+                }
+
+                const startRound = () => {
+                    gameState.phase = 'answering';
+                    gameState.activeChoice = null;
+                    gameState.bets = {};
+                    broadcastState();
+                    view.value = 'game'; // Force view update for Host
+                };
+
+                const calculateScores = () => {
+                    gameState.phase = 'result';
+                    gameState.players.forEach(p => {
+                        const isAct = p.id === gameState.activePlayerId;
+                        const bet = gameState.bets[p.id];
+                        if (isAct) {
+                            const correctGuesses = Object.values(gameState.bets).filter(b => b.answer === gameState.activeChoice).length;
+                            p.score += (correctGuesses * 2);
+                        } else if (bet) {
+                            if (bet.answer === gameState.activeChoice) p.score += (bet.wager * 2); // Won wager + initial stake back logic roughly
+                            else p.score -= bet.wager;
+                        }
+                    });
+                    broadcastState();
+                };
+
+                const nextRound = () => {
+                    if (gameState.round >= maxRounds) {
+                        gameState.phase = 'gameover';
+                        broadcastState();
+                        view.value = 'gameover';
+                        return;
+                    }
+                    gameState.round++;
+                    // Rotate player
+                    const currIdx = gameState.players.findIndex(p => p.id === gameState.activePlayerId);
+                    const nextIdx = (currIdx + 1) % gameState.players.length;
+                    gameState.activePlayerId = gameState.players[nextIdx].id;
+                    
+                    pickRandomQuestion();
+                    startRound();
+                };
+
+                const restartGame = () => {
+                    gameState.players.forEach(p => p.score = 20);
+                    startGameLogic();
+                };
+
+                // --- PLAYER ACTIONS ---
+                const submitActiveChoice = (idx) => {
+                    // CRITICAL FIX: If I am Host AND Active, I must process locally
+                    if (isHost.value) {
+                        processGameAction({ type: 'SUBMIT_ACTIVE_CHOICE', playerId: myId.value, value: idx });
+                    } else {
+                        conn.value.send({ type: 'ACTION', payload: { type: 'SUBMIT_ACTIVE_CHOICE', playerId: myId.value, value: idx } });
+                    }
+                };
+
+                const submitBet = () => {
+                    hasBet.value = true;
+                    const payload = {
+                        type: 'SUBMIT_BET',
+                        playerId: myId.value,
+                        value: { answer: selectedBetAnswer.value, wager: betAmount.value }
+                    };
+                    if (isHost.value) processGameAction(payload);
+                    else conn.value.send({ type: 'ACTION', payload });
+                };
+
+                const copyLink = () => {
+                    navigator.clipboard.writeText(shareLink.value);
+                    alert("Skopiowano link!");
+                }
+
+                // Reset local state
+                watch(() => gameState.phase, (newVal) => {
+                    if (newVal === 'answering') {
+                        hasBet.value = false;
+                        selectedBetAnswer.value = null;
+                        betAmount.value = 1;
+                    }
+                });
+
+                return {
+                    view, nickname, urlGameId, errorMessage, shareLink, isHost,
+                    gameState, players, myPlayer, activePlayerName, amIActive, currentQuestion,
+                    createGame, joinGame, startGameLogic, nextRound, restartGame, copyLink,
+                    submitActiveChoice, submitBet, selectedBetAnswer, betAmount, hasBet,
+                    roundResults, sortedPlayers, maxRounds, getAvatar
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
