@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="pl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EGO - Gra Towarzyska</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6366f1', // Indigo 500
+                        secondary: '#ec4899', // Pink 500
+                        surface: '#1f2937', // Gray 800
+                        background: '#111827', // Gray 900
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    
+    <!-- PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <!-- Ikony (opcjonalnie) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* Animacje i drobne poprawki */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.5s; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        
+        .card-hover { transition: transform 0.2s; }
+        .card-hover:hover { transform: translateY(-2px); }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-background text-white font-sans min-h-screen flex flex-col">
+
+    <div id="app" class="flex-grow flex flex-col max-w-4xl mx-auto w-full p-4">
+        
+        <!-- HEADER -->
+        <header class="flex justify-between items-center mb-6 py-4 border-b border-gray-700">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-brain text-secondary text-2xl"></i>
+                <h1 class="text-2xl font-bold tracking-wider">EGO <span class="text-xs font-normal text-gray-400">Party Game</span></h1>
+            </div>
+            <div v-if="myPlayer" class="flex items-center gap-2 bg-surface px-3 py-1 rounded-full border border-gray-700">
+                <div class="w-2 h-2 rounded-full" :class="isConnected ? 'bg-green-500' : 'bg-red-500'"></div>
+                <span class="text-sm font-semibold">{{ myPlayer.name }}</span>
+                <span class="text-xs text-yellow-400 ml-1"><i class="fa-solid fa-coins"></i> {{ myPlayer.score }}</span>
+            </div>
+        </header>
+
+        <!-- ERROR MESSAGES -->
+        <div v-if="errorMessage" class="bg-red-900/50 border border-red-500 text-red-200 p-4 rounded-lg mb-4 text-center">
+            {{ errorMessage }}
+            <button @click="errorMessage = ''" class="ml-4 text-sm underline">Zamknij</button>
+        </div>
+
+        <!-- VIEW: MENU (START) -->
+        <div v-if="view === 'menu'" class="flex flex-col items-center justify-center flex-grow gap-6 animate-fade">
+            <div class="bg-surface p-8 rounded-2xl shadow-2xl border border-gray-700 w-full max-w-md text-center">
+                <h2 class="text-xl mb-6 font-bold">Dołącz do gry lub stwórz nową</h2>
+                
+                <div class="mb-4 text-left">
+                    <label class="block text-sm text-gray-400 mb-1">Twoje imię / Nick</label>
+                    <input v-model="nickname" type="text" maxlength="12" placeholder="Wpisz imię..." 
+                        class="w-full bg-gray-900 border border-gray-600 rounded p-3 text-white focus:border-primary focus:outline-none transition">
+                </div>
+
+                <div v-if="urlGameId" class="mb-4 p-3 bg-indigo-900/30 border border-indigo-500/50 rounded text-sm text-indigo-200">
+                    Wykryto kod zaproszenia. Kliknij "Dołącz".
+                </div>
+
+                <div class="flex flex-col gap-3">
+                    <button @click="createGame" :disabled="!nickname"
+                        class="bg-primary hover:bg-indigo-600 text-white font-bold py-3 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fa-solid fa-plus mr-2"></i> Stwórz Grę (Host)
+                    </button>
+                    <button @click="joinGame" :disabled="!nickname"
+                        class="bg-surface hover:bg-gray-700 border border-gray-600 text-white font-bold py-3 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fa-solid fa-right-to-bracket mr-2"></i> Dołącz do Gry
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: LOBBY -->
+        <div v-if="view === 'lobby'" class="flex flex-col flex-grow">
+            <div class="text-center mb-8">
+                <h2 class="text-3xl font-bold mb-2">Lobby</h2>
+                <p class="text-gray-400">Czekamy na graczy...</p>
+                
+                <div v-if="isHost" class="mt-4 p-4 bg-surface rounded-lg border border-dashed border-gray-600 inline-block">
+                    <p class="text-xs text-gray-400 uppercase mb-1">Wyślij ten link znajomym:</p>
+                    <div class="flex items-center gap-2 bg-black/30 p-2 rounded">
+                        <code class="text-secondary select-all text-sm break-all">{{ shareLink }}</code>
+                        <button @click="copyLink" class="text-gray-400 hover:text-white px-2">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div v-for="p in players" :key="p.id" class="bg-surface p-4 rounded-xl flex flex-col items-center border border-gray-700 relative">
+                    <div v-if="p.isHost" class="absolute top-2 right-2 text-xs bg-yellow-600/50 text-yellow-200 px-1.5 rounded">HOST</div>
+                    <div class="w-12 h-12 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center text-xl font-bold mb-2">
+                        {{ p.name.charAt(0).toUpperCase() }}
+                    </div>
+                    <span class="font-medium truncate w-full text-center">{{ p.name }}</span>
+                </div>
+            </div>
+
+            <div v-if="isHost" class="text-center mt-auto">
+                <button @click="startGameLogic" :disabled="players.length < 2"
+                    class="bg-green-600 hover:bg-green-700 text-white text-xl font-bold py-4 px-12 rounded-full shadow-lg shadow-green-900/50 transition transform hover:scale-105 disabled:opacity-50 disabled:grayscale">
+                    Rozpocznij Grę <i class="fa-solid fa-play ml-2"></i>
+                </button>
+                <p v-if="players.length < 2" class="text-sm text-red-400 mt-2">Potrzeba min. 2 graczy.</p>
+            </div>
+            <div v-else class="text-center mt-auto text-gray-400 animate-pulse">
+                Czekamy, aż Host rozpocznie grę...
+            </div>
+        </div>
+
+        <!-- VIEW: GAME -->
+        <div v-if="view === 'game' && currentQuestion" class="flex flex-col flex-grow">
+            
+            <!-- Info Bar -->
+            <div class="flex justify-between text-sm text-gray-400 mb-4 uppercase tracking-widest">
+                <span>Runda {{ gameState.round }}/{{ maxRounds }}</span>
+                <span>Aktywny: <strong class="text-secondary">{{ activePlayerName }}</strong></span>
+            </div>
+
+            <!-- Question Card -->
+            <div class="bg-gradient-to-r from-gray-800 to-gray-900 p-6 md:p-8 rounded-2xl border border-gray-700 shadow-2xl mb-6 text-center">
+                <h3 class="text-xl md:text-2xl font-bold leading-relaxed">{{ currentQuestion.q }}</h3>
+            </div>
+
+            <!-- PHASE 1: ACTIVE PLAYER CHOOSING -->
+            <div v-if="gameState.phase === 'answering'" class="flex-grow flex flex-col justify-center">
+                <div v-if="amIActive" class="space-y-3">
+                    <p class="text-center text-secondary font-bold mb-4 text-lg">TY JESTEŚ TEMATEM! Wybierz szczerą odpowiedź:</p>
+                    <button v-for="(ans, idx) in currentQuestion.a" :key="idx" @click="submitActiveChoice(idx)"
+                        class="w-full p-4 bg-surface hover:bg-indigo-900/50 border border-gray-600 hover:border-primary rounded-xl text-left transition flex items-center gap-3 group">
+                        <span class="w-8 h-8 rounded-full bg-gray-700 group-hover:bg-primary flex items-center justify-center text-sm font-bold">{{ ['A','B','C','D'][idx] }}</span>
+                        <span class="group-hover:text-indigo-200">{{ ans }}</span>
+                    </button>
+                </div>
+                <div v-else class="text-center space-y-4">
+                    <div class="w-16 h-16 border-4 border-secondary border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <p class="text-xl">Gracz <span class="text-secondary font-bold">{{ activePlayerName }}</span> wybiera odpowiedź...</p>
+                    <div class="opacity-50 text-sm">Zastanów się, co wybierze!</div>
+                </div>
+            </div>
+
+            <!-- PHASE 2: BETTING -->
+            <div v-if="gameState.phase === 'betting'" class="flex-grow flex flex-col">
+                <div v-if="!amIActive" class="space-y-4">
+                    <div v-if="!hasBet" class="space-y-4">
+                        <p class="text-center text-indigo-400 font-bold mb-2">Obstaw, co wybrał {{ activePlayerName }}:</p>
+                        
+                        <!-- Wybór odpowiedzi -->
+                        <div class="grid gap-3">
+                            <button v-for="(ans, idx) in currentQuestion.a" :key="idx" 
+                                @click="selectedBetAnswer = idx"
+                                :class="selectedBetAnswer === idx ? 'border-secondary bg-secondary/20 ring-2 ring-secondary' : 'border-gray-600 bg-surface'"
+                                class="p-3 border rounded-xl text-left transition flex items-center gap-3">
+                                <span class="font-bold text-gray-400">{{ ['A','B','C','D'][idx] }}</span>
+                                <span>{{ ans }}</span>
+                            </button>
+                        </div>
+
+                        <!-- Suwak stawki -->
+                        <div class="bg-surface p-4 rounded-xl border border-gray-700 mt-4">
+                            <label class="block text-sm text-gray-400 mb-2 flex justify-between">
+                                <span>Stawka (Żetony)</span>
+                                <span class="text-white font-bold text-lg">{{ betAmount }}</span>
+                            </label>
+                            <input type="range" v-model.number="betAmount" min="1" max="3" step="1" 
+                                class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-secondary">
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>1 (Mało pewny)</span>
+                                <span>3 (Pewniak)</span>
+                            </div>
+                        </div>
+
+                        <button @click="submitBet" :disabled="selectedBetAnswer === null"
+                            class="w-full bg-secondary hover:bg-pink-600 text-white font-bold py-4 rounded-xl mt-4 transition disabled:opacity-50">
+                            Zatwierdź Zakład
+                        </button>
+                    </div>
+                    <div v-else class="text-center py-10">
+                        <i class="fa-solid fa-check-circle text-5xl text-green-500 mb-4"></i>
+                        <p class="text-xl">Zakład przyjęty!</p>
+                        <p class="text-gray-400">Czekamy na pozostałych...</p>
+                    </div>
+                </div>
+                <div v-else class="text-center py-10 space-y-4">
+                    <p class="text-2xl">Twoja odpowiedź została zapisana.</p>
+                    <div class="p-4 bg-surface rounded border border-gray-600 inline-block">
+                        Twoja odpowiedź: <span class="text-secondary font-bold">{{ currentQuestion.a[gameState.activeChoice] }}</span>
+                    </div>
+                    <p class="text-gray-400 animate-pulse">Inni gracze obstawiają...</p>
+                </div>
+            </div>
+
+            <!-- PHASE 3: RESULTS -->
+            <div v-if="gameState.phase === 'result'" class="flex-grow flex flex-col items-center text-center animate-fade">
+                <div class="w-full mb-6">
+                    <p class="text-gray-400 text-sm uppercase mb-2">{{ activePlayerName }} wybrał:</p>
+                    <div class="bg-gradient-to-r from-green-900 to-green-800 p-4 rounded-xl border border-green-500 shadow-lg">
+                        <span class="text-xl font-bold text-white">{{ currentQuestion.a[gameState.activeChoice] }}</span>
+                    </div>
+                </div>
+
+                <div class="w-full grid gap-2 mb-6">
+                    <div v-for="res in roundResults" :key="res.id" 
+                        class="flex items-center justify-between p-3 rounded bg-surface border border-gray-700"
+                        :class="{'border-green-500/50': res.won, 'border-red-500/50': !res.won && !res.isActive}">
+                        
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold">{{ res.name }}</span>
+                            <span v-if="res.isActive" class="text-xs bg-gray-600 px-1 rounded">AKTYWNY</span>
+                        </div>
+
+                        <div v-if="res.isActive" class="text-indigo-400">
+                            +{{ res.change }} pkt
+                        </div>
+                        <div v-else class="flex items-center gap-2">
+                            <span class="text-sm text-gray-400">Obstawiał: {{ ['A','B','C','D'][res.betAnswer] }} ({{res.wager}})</span>
+                            <span :class="res.won ? 'text-green-400 font-bold' : 'text-red-400'">
+                                {{ res.won ? '+' + res.change : res.change }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="isHost" class="mt-auto w-full">
+                    <button @click="nextRound" class="w-full bg-primary hover:bg-indigo-600 py-4 rounded-xl font-bold text-lg shadow-lg">
+                        Następne Pytanie <i class="fa-solid fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+                <div v-else class="mt-auto text-gray-400 animate-pulse">
+                    Host wznawia grę...
+                </div>
+            </div>
+
+        </div>
+
+        <!-- VIEW: GAME OVER -->
+        <div v-if="view === 'gameover'" class="flex flex-col items-center justify-center flex-grow text-center">
+            <i class="fa-solid fa-trophy text-6xl text-yellow-400 mb-6"></i>
+            <h2 class="text-4xl font-bold mb-8">Koniec Gry!</h2>
+            
+            <div class="w-full max-w-md bg-surface rounded-xl border border-gray-700 overflow-hidden">
+                <div v-for="(p, idx) in sortedPlayers" :key="p.id" 
+                    class="flex items-center justify-between p-4 border-b border-gray-700 last:border-0"
+                    :class="idx === 0 ? 'bg-yellow-900/20' : ''">
+                    <div class="flex items-center gap-4">
+                        <span class="text-2xl font-bold w-8 text-gray-500" :class="{'text-yellow-400': idx===0}">#{{ idx + 1 }}</span>
+                        <span class="text-lg">{{ p.name }}</span>
+                    </div>
+                    <span class="text-xl font-bold text-primary">{{ p.score }} pkt</span>
+                </div>
+            </div>
+
+            <button @click="restartGame" v-if="isHost" class="mt-8 text-gray-400 hover:text-white underline">
+                Zagraj jeszcze raz
+            </button>
+        </div>
+
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        const QUESTIONS = [
+            { q: "Co bym zrobił, gdybym znalazł portfel pełen pieniędzy?", a: ["Oddaję na policję", "Biorę kasę, wyrzucam dokumenty", "Szukam właściciela na FB", "Biorę kasę, oddaję dokumenty"] },
+            { q: "Jaka jest moja największa wada?", a: ["Lenistwo", "Spóźnialstwo", "Gadulstwo", "Impulsywność"] },
+            { q: "Gdybym wygrał w Lotto, co kupuję najpierw?", a: ["Dom dla rodziny", "Wypasiony samochód", "Wycieczkę dookoła świata", "Inwestuję wszystko"] },
+            { q: "Jaki rodzaj filmu wybieram na wieczór?", a: ["Komedia", "Horror", "Akcja", "Dramat psychologiczny"] },
+            { q: "Co najbardziej cenię u przyjaciół?", a: ["Lojalność", "Poczucie humoru", "Inteligencję", "Szczerość"] },
+            { q: "Mój idealny sposób na wakacje to:", a: ["Leżenie na plaży all-inclusive", "Zwiedzanie zabytków", "Trekking w górach", "Imprezowanie w klubach"] },
+            { q: "Jak reaguję na kłótnię?", a: ["Krzyczę i wyrzucam emocje", "Zamykam się w sobie", "Obracam w żart", "Próbuję racjonalnie dyskutować"] },
+            { q: "Gdybym mógł mieć supermoc, wybrałbym:", a: ["Latanie", "Niewidzialność", "Czytanie w myślach", "Podróże w czasie"] },
+            { q: "Co najczęściej robię w wolnym czasie?", a: ["Scrolluję social media", "Uprawiam sport", "Spotykam się ze znajomymi", "Oglądam seriale"] },
+            { q: "Czego najbardziej się boję?", a: ["Pająków/Węży", "Samotności", "Porażki", "Choroby"] },
+            { q: "Moje podejście do pieniędzy:", a: ["Oszczędzam każdy grosz", "Wydaję na bieżąco", "Lubię luksus, nawet na kredyt", "Mam węża w kieszeni"] },
+            { q: "Jaki alkohol wybieram na imprezie?", a: ["Piwo", "Wino", "Wódka/Drinki", "Nie piję alkoholu"] },
+            { q: "Gdy ktoś mnie wkurzy, to:", a: ["Planuję zemstę", "Szybko wybaczam", "Ignoruję tę osobę", "Robię awanturę"] },
+            { q: "Co jest dla mnie ważniejsze w pracy?", a: ["Wysokie zarobki", "Dobra atmosfera", "Rozwój osobisty", "Święty spokój"] },
+            { q: "Jaki jest mój stosunek do gotowania?", a: ["Kocham i eksperymentuję", "Gotuję, bo muszę", "Zamawiam jedzenie", "Jem byle co"] },
+            { q: "Gdybym mógł spotkać jedną osobę (żywą lub nie), byłby to:", a: ["Znany muzyk", "Polityk/Przywódca", "Mój przodek", "Celebryta"] },
+            { q: "Co robię, gdy widzę bezdomnego?", a: ["Daję pieniądze", "Kupuję jedzenie", "Ignoruję", "Zastanawiam się nad jego losem"] },
+            { q: "Mój idealny wieczór randkowy:", a: ["Kino i kolacja", "Spacer przy księżycu", "Netflix and chill", "Wspólna aktywność (kręgle, itp.)"] },
+            { q: "Czego w sobie nie lubię?", a: ["Wyglądu", "Braku asertywności", "Zbyt dużej wrażliwości", "Jestem idealny/a"] },
+            { q: "Jak podchodzę do zmian?", a: ["Lubię i szukam ich", "Akceptuję z trudem", "Boję się ich", "Są mi obojętne"] }
+        ];
+
+        const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
+
+        createApp({
+            setup() {
+                // --- STATE ---
+                const view = ref('menu'); // menu, lobby, game, gameover
+                const nickname = ref('');
+                const urlGameId = ref('');
+                const errorMessage = ref('');
+                const shareLink = ref('');
+                
+                // Network
+                const peer = ref(null);
+                const conn = ref(null); // For client: connection to host
+                const connections = ref([]); // For host: list of connections
+                const isHost = ref(false);
+                const myId = ref('');
+                const isConnected = ref(false);
+
+                // Game State (Synced from Host)
+                const gameState = reactive({
+                    players: [], // { id, name, score, isHost, isReady }
+                    round: 0,
+                    phase: 'lobby', // lobby, answering, betting, result, gameover
+                    activePlayerId: null,
+                    questionIndex: 0,
+                    activeChoice: null, // index 0-3
+                    bets: {} // { playerId: { answer: 0-3, wager: 1-3 } }
+                });
+
+                // Local Game UI State
+                const selectedBetAnswer = ref(null);
+                const betAmount = ref(1);
+                const hasBet = ref(false);
+                const maxRounds = 20; // Full game
+
+                // --- COMPUTED ---
+                const myPlayer = computed(() => gameState.players.find(p => p.id === myId.value));
+                const activePlayer = computed(() => gameState.players.find(p => p.id === gameState.activePlayerId));
+                const activePlayerName = computed(() => activePlayer.value ? activePlayer.value.name : '???');
+                const amIActive = computed(() => gameState.activePlayerId === myId.value);
+                const currentQuestion = computed(() => QUESTIONS[gameState.questionIndex]);
+                const players = computed(() => gameState.players);
+                
+                const roundResults = computed(() => {
+                    // Generate result list for the result screen
+                    if (gameState.phase !== 'result') return [];
+                    return gameState.players.map(p => {
+                        const isAct = p.id === gameState.activePlayerId;
+                        const bet = gameState.bets[p.id];
+                        let change = 0;
+                        let won = false;
+
+                        if (isAct) {
+                            // Active player gets points based on how many guessed right
+                            const correctGuesses = Object.values(gameState.bets).filter(b => b.answer === gameState.activeChoice).length;
+                            change = correctGuesses * 2; 
+                        } else if (bet) {
+                            if (bet.answer === gameState.activeChoice) {
+                                change = bet.wager * 2; // Win: get wager back + wager amount (net +wager) -> Logic: if I have 20, bet 3. Temporary pool? Simplified: Just add score if win, sub if lose.
+                                // Prompt: "dostaje z powrotem + drugie tyle" => Net gain = Wager. 
+                                // "nie trafił: traci" => Net loss = Wager.
+                                // Implementation: Score += wager (since we didn't deduct yet) OR Score was deducted?
+                                // Let's do: Score stays same during betting. Result: Win -> +Wager. Lose -> -Wager.
+                                won = true;
+                                change = bet.wager; 
+                            } else {
+                                change = -bet.wager;
+                                won = false;
+                            }
+                        }
+                        return { 
+                            id: p.id, 
+                            name: p.name, 
+                            isActive: isAct, 
+                            change: change, 
+                            won: won, 
+                            wager: bet ? bet.wager : 0,
+                            betAnswer: bet ? bet.answer : null
+                        };
+                    });
+                });
+
+                const sortedPlayers = computed(() => {
+                    return [...gameState.players].sort((a, b) => b.score - a.score);
+                });
+
+                // --- LIFECYCLE ---
+                onMounted(() => {
+                    const params = new URLSearchParams(window.location.search);
+                    const id = params.get('gameId');
+                    if (id) urlGameId.value = id;
+                });
+
+                // --- PEERJS & NETWORK LOGIC ---
+
+                const initPeer = () => {
+                    return new Promise((resolve, reject) => {
+                        // Use public PeerJS server
+                        const p = new Peer(null, { debug: 1 });
+                        
+                        p.on('open', (id) => {
+                            myId.value = id;
+                            isConnected.value = true;
+                            resolve(id);
+                        });
+
+                        p.on('error', (err) => {
+                            console.error(err);
+                            errorMessage.value = "Błąd połączenia: " + err.type;
+                            isConnected.value = false;
+                        });
+
+                        peer.value = p;
+                    });
+                };
+
+                const createGame = async () => {
+                    isHost.value = true;
+                    await initPeer();
+                    
+                    // Setup Host logic
+                    gameState.players.push({ id: myId.value, name: nickname.value, score: 20, isHost: true });
+                    
+                    shareLink.value = `${window.location.origin}${window.location.pathname}?gameId=${myId.value}`;
+                    
+                    peer.value.on('connection', (c) => {
+                        connections.value.push(c);
+                        
+                        c.on('data', (data) => handleDataFromClient(c, data));
+                        
+                        c.on('close', () => {
+                            // Remove player (simple handling)
+                            // In real app, handle reconnection
+                        });
+                    });
+
+                    view.value = 'lobby';
+                };
+
+                const joinGame = async () => {
+                    isHost.value = false;
+                    const hostId = urlGameId.value || prompt("Podaj ID gry (z linku hosta):");
+                    if (!hostId) return;
+
+                    await initPeer();
+                    
+                    conn.value = peer.value.connect(hostId);
+                    
+                    conn.value.on('open', () => {
+                        isConnected.value = true;
+                        // Send Join Request
+                        conn.value.send({ type: 'JOIN', payload: { name: nickname.value } });
+                    });
+
+                    conn.value.on('data', (data) => {
+                        if (data.type === 'STATE_UPDATE') {
+                            Object.assign(gameState, data.payload);
+                            // Sync view if needed
+                            if (gameState.phase === 'lobby') view.value = 'lobby';
+                            else if (gameState.phase === 'gameover') view.value = 'gameover';
+                            else view.value = 'game';
+                        }
+                    });
+
+                    conn.value.on('close', () => {
+                        errorMessage.value = "Rozłączono z hostem.";
+                        isConnected.value = false;
+                    });
+                };
+
+                // --- HOST LOGIC ---
+
+                const broadcastState = () => {
+                    const data = { type: 'STATE_UPDATE', payload: gameState };
+                    connections.value.forEach(c => c.send(data));
+                };
+
+                const handleDataFromClient = (conn, data) => {
+                    if (!isHost.value) return;
+
+                    if (data.type === 'JOIN') {
+                        // Add player
+                        const newPlayer = { 
+                            id: conn.peer, 
+                            name: data.payload.name, 
+                            score: 20, 
+                            isHost: false 
+                        };
+                        // Avoid duplicates
+                        if (!gameState.players.find(p => p.id === newPlayer.id)) {
+                            gameState.players.push(newPlayer);
+                            broadcastState();
+                        }
+                    }
+                    else if (data.type === 'ACTION') {
+                        processGameAction(data.payload);
+                    }
+                };
+
+                const processGameAction = (action) => {
+                    if (action.type === 'SUBMIT_ACTIVE_CHOICE') {
+                        if (gameState.phase !== 'answering') return;
+                        if (action.playerId !== gameState.activePlayerId) return;
+                        
+                        gameState.activeChoice = action.value;
+                        gameState.phase = 'betting';
+                        broadcastState();
+                    }
+                    else if (action.type === 'SUBMIT_BET') {
+                        if (gameState.phase !== 'betting') return;
+                        
+                        gameState.bets[action.playerId] = {
+                            answer: action.value.answer,
+                            wager: action.value.wager
+                        };
+
+                        // Check if all non-active players have bet
+                        const bettersCount = gameState.players.length - 1;
+                        const currentBetsCount = Object.keys(gameState.bets).length;
+
+                        if (currentBetsCount >= bettersCount) {
+                            calculateScores();
+                        } else {
+                            broadcastState(); // Update progress
+                        }
+                    }
+                };
+
+                // --- GAME FLOW CONTROLLERS (HOST) ---
+
+                const startGameLogic = () => {
+                    gameState.round = 1;
+                    gameState.questionIndex = Math.floor(Math.random() * QUESTIONS.length);
+                    // Pick random starter
+                    gameState.activePlayerId = gameState.players[0].id;
+                    startRound();
+                };
+
+                const startRound = () => {
+                    gameState.phase = 'answering';
+                    gameState.activeChoice = null;
+                    gameState.bets = {};
+                    broadcastState();
+                };
+
+                const calculateScores = () => {
+                    gameState.phase = 'result';
+                    
+                    // Update scores in state
+                    gameState.players.forEach(p => {
+                        const isAct = p.id === gameState.activePlayerId;
+                        const bet = gameState.bets[p.id];
+                        
+                        if (isAct) {
+                            const correctGuesses = Object.values(gameState.bets).filter(b => b.answer === gameState.activeChoice).length;
+                            p.score += (correctGuesses * 2);
+                        } else if (bet) {
+                            if (bet.answer === gameState.activeChoice) {
+                                p.score += bet.wager;
+                            } else {
+                                p.score -= bet.wager;
+                            }
+                        }
+                    });
+                    
+                    broadcastState();
+                };
+
+                const nextRound = () => {
+                    if (gameState.round >= maxRounds) {
+                        gameState.phase = 'gameover';
+                        broadcastState();
+                        return;
+                    }
+
+                    gameState.round++;
+                    // Rotate active player
+                    const currIdx = gameState.players.findIndex(p => p.id === gameState.activePlayerId);
+                    const nextIdx = (currIdx + 1) % gameState.players.length;
+                    gameState.activePlayerId = gameState.players[nextIdx].id;
+                    
+                    // New Random Question (simple random, can repeat in simple implementation)
+                    let newQ = Math.floor(Math.random() * QUESTIONS.length);
+                    while(newQ === gameState.questionIndex) { newQ = Math.floor(Math.random() * QUESTIONS.length); }
+                    gameState.questionIndex = newQ;
+
+                    startRound();
+                };
+
+                const restartGame = () => {
+                    // Reset scores
+                    gameState.players.forEach(p => p.score = 20);
+                    startGameLogic();
+                };
+
+                // --- CLIENT ACTIONS ---
+
+                const submitActiveChoice = (idx) => {
+                    if (isHost.value) {
+                        processGameAction({ type: 'SUBMIT_ACTIVE_CHOICE', playerId: myId.value, value: idx });
+                    } else {
+                        conn.value.send({ type: 'ACTION', payload: { type: 'SUBMIT_ACTIVE_CHOICE', playerId: myId.value, value: idx } });
+                    }
+                };
+
+                const submitBet = () => {
+                    const payload = {
+                        type: 'SUBMIT_BET',
+                        playerId: myId.value,
+                        value: { answer: selectedBetAnswer.value, wager: betAmount.value }
+                    };
+                    
+                    hasBet.value = true;
+
+                    if (isHost.value) {
+                        processGameAction(payload);
+                    } else {
+                        conn.value.send({ type: 'ACTION', payload });
+                    }
+                };
+
+                // Reset local bet state on new round
+                watch(() => gameState.phase, (newVal) => {
+                    if (newVal === 'answering' || newVal === 'betting') {
+                        if (gameState.bets[myId.value] === undefined) {
+                             hasBet.value = false;
+                             selectedBetAnswer.value = null;
+                             betAmount.value = 1;
+                        }
+                    }
+                });
+
+                // Utilities
+                const copyLink = () => {
+                    navigator.clipboard.writeText(shareLink.value);
+                    alert("Link skopiowany do schowka!");
+                };
+
+                return {
+                    view, nickname, urlGameId, errorMessage, shareLink,
+                    isHost, isConnected, myId,
+                    gameState,
+                    createGame, joinGame, copyLink,
+                    players, myPlayer, activePlayerName, amIActive, currentQuestion,
+                    startGameLogic, nextRound, restartGame,
+                    submitActiveChoice, submitBet,
+                    selectedBetAnswer, betAmount, hasBet,
+                    roundResults, sortedPlayers, maxRounds
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
